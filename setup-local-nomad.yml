@@ -1,0 +1,183 @@
+---
+- name: Provision Nomad Local Cluster
+  hosts: localhost
+  connection: local
+  vars:
+    # --- CONFIGURATION ---
+    server_count: 3
+    client_count: 3
+
+  tasks:
+    # --- STEP 1: GENERATE DYNAMIC HASHED LISTS ---
+    - name: Generate Server Names
+      ansible.builtin.set_fact:
+        servers: "{{ servers | default([]) + ['nomad-server-' ~ (('s' ~ item) | hash('md5') | truncate(6, True, ''))] }}"
+      loop: "{{ range(1, server_count + 1) | list }}"
+
+    - name: Generate Client Names
+      ansible.builtin.set_fact:
+        clients: "{{ clients | default([]) + ['nomad-client-' ~ (('c' ~ item) | hash('md5') | truncate(6, True, ''))] }}"
+      loop: "{{ range(1, client_count + 1) | list }}"
+
+    # --- STEP 2: LAUNCH VMS ---
+    - name: Launch Nomad Servers
+      ansible.builtin.shell: |
+        multipass info {{ item }} || multipass launch -n {{ item }} --cpus 1 --memory 1G --disk 5G --timeout 600
+      loop: "{{ servers }}"
+      timeout: 900
+
+    - name: Launch Nomad Clients
+      ansible.builtin.shell: |
+        multipass info {{ item }} || multipass launch -n {{ item }} --cpus 1 --memory 2G --disk 10G --timeout 600
+      loop: "{{ clients }}"
+      timeout: 900
+
+    # --- STEP 3: GATHER SERVER IPS DYNAMICALLY ---
+    - name: Retrieve IPs for all servers
+      ansible.builtin.shell: multipass info {{ item }} | grep IPv4 | awk '{print $2}'
+      loop: "{{ servers }}"
+      register: server_ip_results
+
+    - name: Format IPs for Nomad configuration safely
+      ansible.builtin.set_fact:
+        # to_json automatically creates a perfect string like: ["192.168.2.5", "192.168.2.6"]
+        retry_join_string: "{{ server_ip_results.results | map(attribute='stdout') | list | to_json }}"
+
+    # --- STEP 4: INSTALLATION (ALL NODES) ---
+    - name: Install Nomad on all nodes and Docker on Clients
+      ansible.builtin.shell: |
+        # Kill any stuck apt processes from the previous run
+        multipass exec {{ item }} -- sudo killall apt apt-get dpkg || true
+        multipass exec {{ item }} -- sudo dpkg --configure -a
+
+        multipass exec {{ item }} -- sudo apt-get update
+        multipass exec {{ item }} -- sudo apt-get install wget gpg coreutils {{ 'docker.io' if 'clt' in item else '' }} -y
+        multipass exec {{ item }} -- bash -c 'wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg --yes'
+        multipass exec {{ item }} -- bash -c 'echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list'
+        multipass exec {{ item }} -- sudo apt-get update
+        multipass exec {{ item }} -- sudo apt-get install nomad -y
+        multipass exec {{ item }} -- sudo apt-get install consul -y
+      loop: "{{ servers + clients }}"
+      timeout: 600
+
+    # --- STEP 5: INSTALL DOCKER (CLIENTS ONLY) ---
+    - name: Install and Enable Docker on Clients
+      ansible.builtin.shell: |
+        # Kill any stuck apt processes from the previous run
+        multipass exec {{ item }} -- sudo killall apt apt-get dpkg || true
+        multipass exec {{ item }} -- sudo dpkg --configure -a
+        
+        # Install Docker with strictly non-interactive flags
+        multipass exec {{ item }} -- sudo DEBIAN_FRONTEND=noninteractive apt-get install docker.io -yq
+        multipass exec {{ item }} -- sudo systemctl enable --now docker
+        multipass exec {{ item }} -- sudo usermod -aG docker ubuntu
+      loop: "{{ clients }}"
+      timeout: 300
+
+    # --- STEP 6: CONFIGURE SERVERS (HA) ---
+    - name: Generate and Transfer Server Configurations
+      ansible.builtin.shell: |
+        cat <<'EOF' > /tmp/{{ item }}_nomad.hcl
+        datacenter = "local-dc"
+        data_dir   = "/opt/nomad/data"
+        bind_addr  = "0.0.0.0"
+
+        server {
+          enabled          = true
+          bootstrap_expect = {{ server_count }} 
+          server_join {
+            retry_join = {{ retry_join_string }}
+          }
+        }
+        EOF
+        multipass transfer /tmp/{{ item }}_nomad.hcl {{ item }}:/tmp/nomad.hcl
+        multipass exec {{ item }} -- sudo mv /tmp/nomad.hcl /etc/nomad.d/nomad.hcl
+        multipass exec {{ item }} -- sudo systemctl restart nomad
+      loop: "{{ servers }}"
+
+    - name: Configure and Start Consul Servers
+      ansible.builtin.shell: |
+        cat <<'EOF' > /tmp/{{ item }}_consul.hcl
+        datacenter = "local-dc"
+        data_dir   = "/opt/consul/data"
+        bind_addr  = "0.0.0.0"
+        client_addr = "0.0.0.0"
+
+        server = true
+        bootstrap_expect = {{ server_count }}
+
+        retry_join = {{ retry_join_string }}
+
+        ui_config {
+          enabled = true
+        }
+        EOF
+        multipass transfer /tmp/{{ item }}_consul.hcl {{ item }}:/tmp/consul.hcl
+        multipass exec {{ item }} -- sudo mkdir -p /opt/consul/data
+        multipass exec {{ item }} -- sudo chown -R consul:consul /opt/consul
+        multipass exec {{ item }} -- sudo mv /tmp/consul.hcl /etc/consul.d/consul.hcl
+        multipass exec {{ item }} -- sudo systemctl enable consul
+        multipass exec {{ item }} -- sudo systemctl restart consul
+      loop: "{{ servers }}"
+
+    # --- STEP 7: CONFIGURE AND START CONSUL ON CLIENTS ---
+    - name: Configure and Start Consul on Clients
+      ansible.builtin.shell: |
+        cat <<'EOF' > /tmp/{{ item }}_consul.hcl
+        datacenter = "local-dc"
+        data_dir   = "/opt/consul/data"
+        bind_addr  = "{{ '{{' }} GetInterfaceIP \"enp0s1\" {{ '}}' }}"
+        client_addr = "0.0.0.0"
+
+        server = false
+
+        retry_join = {{ retry_join_string }}
+        EOF
+        multipass transfer /tmp/{{ item }}_consul.hcl {{ item }}:/tmp/consul.hcl
+        multipass exec {{ item }} -- sudo mkdir -p /opt/consul/data
+        multipass exec {{ item }} -- sudo chown -R consul:consul /opt/consul
+        multipass exec {{ item }} -- sudo mv /tmp/consul.hcl /etc/consul.d/consul.hcl
+        multipass exec {{ item }} -- sudo systemctl enable consul
+        multipass exec {{ item }} -- sudo systemctl restart consul
+      loop: "{{ clients }}"
+
+    # --- STEP 8: CONFIGURE CLIENTS ---
+    - name: Generate and Transfer Client Configurations
+      ansible.builtin.shell: |
+        cat <<'EOF' > /tmp/{{ item }}_nomad.hcl
+        datacenter = "local-dc"
+        data_dir   = "/opt/nomad/data"
+        bind_addr  = "0.0.0.0"
+
+        client {
+          enabled = true
+          servers = {{ retry_join_string }}
+        }
+
+        consul {
+          address = "127.0.0.1:8500"
+        }
+
+        plugin "docker" {
+          config {
+            volumes {
+              enabled = true
+            }
+          }
+        }
+        EOF
+        multipass transfer /tmp/{{ item }}_nomad.hcl {{ item }}:/tmp/nomad.hcl
+        multipass exec {{ item }} -- sudo mv /tmp/nomad.hcl /etc/nomad.d/nomad.hcl
+        multipass exec {{ item }} -- sudo systemctl restart nomad
+      loop: "{{ clients }}"
+
+    # --- STEP 9: PRINT SUCCESS INSTRUCTIONS ---
+    - name: Print Connection Instructions
+      ansible.builtin.debug:
+        msg: 
+          - "NOMAD CLUSTER PROVISIONED SUCCESSFULLY!"
+          - "====================================================="
+          - "Nomad UI: http://{{ server_ip_results.results[0].stdout }}:4646"
+          - "Consul UI: http://{{ server_ip_results.results[0].stdout }}:8500"
+          - "====================================================="
+          - "Set CLI env var: export NOMAD_ADDR=http://{{ server_ip_results.results[0].stdout }}:4646"
