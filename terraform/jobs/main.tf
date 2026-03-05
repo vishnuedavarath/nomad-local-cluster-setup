@@ -7,6 +7,15 @@ terraform {
   }
 }
 
+# Nomad ACL token (management token for creating resources)
+# Set via: export TF_VAR_nomad_token="<token>"
+variable "nomad_token" {
+  description = "Nomad ACL token (management token)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # Read the cluster state to get the Nomad address
 data "terraform_remote_state" "cluster" {
   backend = "local"
@@ -21,7 +30,8 @@ locals {
 }
 
 provider "nomad" {
-  address = local.nomad_address
+  address   = local.nomad_address
+  secret_id = var.nomad_token != "" ? var.nomad_token : null
 }
 
 # Deploy the nginx job
