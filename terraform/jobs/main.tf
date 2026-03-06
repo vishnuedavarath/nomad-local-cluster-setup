@@ -27,11 +27,12 @@ data "terraform_remote_state" "cluster" {
 
 locals {
   nomad_address = data.terraform_remote_state.cluster.outputs.nomad_ui_url
+  nomad_token   = try(data.terraform_remote_state.cluster.outputs.acl_bootstrap_token, "")
 }
 
 provider "nomad" {
   address   = local.nomad_address
-  secret_id = var.nomad_token != "" ? var.nomad_token : null
+  secret_id = var.nomad_token != "" ? var.nomad_token : (local.nomad_token != "" ? local.nomad_token : null)
 }
 
 # Deploy the nginx job

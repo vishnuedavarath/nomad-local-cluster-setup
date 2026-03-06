@@ -32,3 +32,15 @@ output "client_names" {
   description = "Names of all Nomad client VMs"
   value       = local.client_names
 }
+
+output "acl_bootstrap_token" {
+  description = "Nomad ACL bootstrap token (management token)"
+  value       = local.acl_bootstrap_token
+  sensitive   = true
+}
+
+output "nomad_token_export" {
+  description = "Export command for NOMAD_TOKEN environment variable"
+  value       = var.enable_acl ? "export NOMAD_TOKEN=${local.acl_bootstrap_token}" : "ACL disabled - no token needed"
+  sensitive   = true
+}

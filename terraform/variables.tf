@@ -51,3 +51,9 @@ variable "client_disk" {
   type        = string
   default     = "10G"
 }
+
+variable "enable_acl" {
+  description = "Enable Nomad ACL system"
+  type        = bool
+  default     = true
+}

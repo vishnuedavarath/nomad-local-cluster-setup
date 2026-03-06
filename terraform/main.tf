@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.10"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -157,6 +161,12 @@ server {
     retry_join = ${local.retry_join_string}
   }
 }
+
+%{if var.enable_acl~}
+acl {
+  enabled = true
+}
+%{endif~}
 EOF
       multipass transfer /tmp/${local.server_names[count.index]}_nomad.hcl ${local.server_names[count.index]}:/tmp/nomad.hcl
       multipass exec ${local.server_names[count.index]} -- sudo mv /tmp/nomad.hcl /etc/nomad.d/nomad.hcl
@@ -264,10 +274,51 @@ plugin "docker" {
     }
   }
 }
+
+%{if var.enable_acl~}
+acl {
+  enabled = true
+}
+%{endif~}
 EOF
       multipass transfer /tmp/${local.client_names[count.index]}_nomad.hcl ${local.client_names[count.index]}:/tmp/nomad.hcl
       multipass exec ${local.client_names[count.index]} -- sudo mv /tmp/nomad.hcl /etc/nomad.d/nomad.hcl
       multipass exec ${local.client_names[count.index]} -- sudo systemctl restart nomad
     EOT
   }
+}
+
+# --- STEP 10: WAIT FOR NOMAD CLUSTER TO STABILIZE ---
+resource "time_sleep" "wait_for_nomad_cluster" {
+  depends_on = [
+    null_resource.configure_nomad_servers,
+    null_resource.configure_nomad_clients
+  ]
+
+  create_duration = "15s"
+}
+
+# --- STEP 11: BOOTSTRAP ACL (if enabled) ---
+resource "null_resource" "bootstrap_acl" {
+  count = var.enable_acl ? 1 : 0
+
+  depends_on = [time_sleep.wait_for_nomad_cluster]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Bootstrap ACL and save the token
+      multipass exec ${local.server_names[0]} -- nomad acl bootstrap -json > /tmp/nomad_acl_bootstrap.json 2>/dev/null || true
+    EOT
+  }
+}
+
+# Read the bootstrap token from the file
+data "local_file" "acl_bootstrap" {
+  count      = var.enable_acl ? 1 : 0
+  depends_on = [null_resource.bootstrap_acl]
+  filename   = "/tmp/nomad_acl_bootstrap.json"
+}
+
+locals {
+  acl_bootstrap_token = var.enable_acl ? try(jsondecode(data.local_file.acl_bootstrap[0].content).SecretID, "Bootstrap failed or already done") : "ACL disabled"
 }
