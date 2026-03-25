@@ -31,7 +31,7 @@ Customize the cluster by creating a `terraform.tfvars` file:
 ```hcl
 server_count  = 3
 client_count  = 3
-datacenter    = "local-dc"
+datacenter    = "dc1"
 server_cpus   = 1
 server_memory = "1G"
 server_disk   = "5G"
@@ -65,17 +65,31 @@ export NOMAD_ADDR=http://<server-ip>:4646
 nomad job run ../jobs/nginx.nomad
 ```
 
-## Deploy Jobs via Terraform
+## Additional Terraform Workspaces
 
-You can also deploy jobs using the separate Terraform configuration:
+The Terraform layout is separated by responsibility:
+
+- `./` provisions the local Nomad and Consul cluster
+- `operations/` manages shared namespaces, ACLs, secrets, and host volumes
+- `development/` deploys sample or development workloads
+
+Deploy operational configuration:
 
 ```bash
-cd jobs
+cd operations
 terraform init
 terraform apply
 ```
 
-See [jobs/README.md](jobs/README.md) for details.
+Deploy development workloads:
+
+```bash
+cd development
+terraform init
+terraform apply
+```
+
+See [operations/README.md](operations/README.md) and [development/README.md](development/README.md) for details.
 
 ## Troubleshooting
 

@@ -147,6 +147,11 @@ resource "null_resource" "configure_nomad_servers" {
 
   depends_on = [null_resource.install_nomad_servers]
 
+  triggers = {
+    datacenter  = var.datacenter
+    server_name = local.server_names[count.index]
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       cat <<'EOF' > /tmp/${local.server_names[count.index]}_nomad.hcl
@@ -181,6 +186,11 @@ resource "null_resource" "configure_consul_servers" {
 
   depends_on = [null_resource.install_nomad_servers]
 
+  triggers = {
+    datacenter  = var.datacenter
+    server_name = local.server_names[count.index]
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       cat <<'EOF' > /tmp/${local.server_names[count.index]}_consul.hcl
@@ -214,6 +224,11 @@ resource "null_resource" "configure_consul_clients" {
 
   depends_on = [null_resource.install_nomad_clients]
 
+  triggers = {
+    datacenter  = var.datacenter
+    client_name = local.client_names[count.index]
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       cat <<'EOF' > /tmp/${local.client_names[count.index]}_consul.hcl
@@ -244,6 +259,11 @@ resource "null_resource" "configure_nomad_clients" {
     null_resource.install_docker_clients,
     null_resource.configure_consul_clients
   ]
+
+  triggers = {
+    datacenter  = var.datacenter
+    client_name = local.client_names[count.index]
+  }
 
   provisioner "local-exec" {
     command = <<-EOT

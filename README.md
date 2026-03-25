@@ -53,7 +53,8 @@ nomad-local-cluster/
 │   ├── main.tf
 │   ├── variables.tf
 │   ├── outputs.tf
-│   └── jobs/                   # Deploy jobs via Terraform
+│   ├── operations/             # Cluster operations: ACLs, namespaces, secrets, volumes
+│   └── development/            # Development workloads deployed via Terraform
 ├── jobs/                       # Nomad job definitions
 │   ├── nginx.nomad
 │   ├── foo.nomad.hcl

@@ -1,7 +1,6 @@
 # Nomad Secrets Management
 # Using Nomad Variables (built-in secret storage with ACL support)
 
-# Database credentials secret
 resource "nomad_variable" "db_credentials" {
   path      = "secrets/database"
   namespace = nomad_namespace.development.name
@@ -15,7 +14,6 @@ resource "nomad_variable" "db_credentials" {
   }
 }
 
-# API keys secret
 resource "nomad_variable" "api_keys" {
   path      = "secrets/api"
   namespace = nomad_namespace.development.name
@@ -28,7 +26,6 @@ resource "nomad_variable" "api_keys" {
   }
 }
 
-# TLS certificates
 resource "nomad_variable" "tls_certs" {
   path      = "secrets/tls"
   namespace = nomad_namespace.production.name
@@ -51,7 +48,6 @@ resource "nomad_variable" "tls_certs" {
   }
 }
 
-# Staging environment secrets
 resource "nomad_variable" "staging_secrets" {
   path      = "secrets/app"
   namespace = nomad_namespace.staging.name
@@ -63,7 +59,6 @@ resource "nomad_variable" "staging_secrets" {
   }
 }
 
-# Production environment secrets
 resource "nomad_variable" "production_secrets" {
   path      = "secrets/app"
   namespace = nomad_namespace.production.name
@@ -75,7 +70,6 @@ resource "nomad_variable" "production_secrets" {
   }
 }
 
-# Outputs
 output "secret_paths" {
   description = "Paths to access secrets in jobs"
   value = {

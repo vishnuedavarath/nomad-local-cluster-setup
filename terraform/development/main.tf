@@ -16,7 +16,7 @@ variable "nomad_token" {
   default     = ""
 }
 
-# Read the cluster state to get the Nomad address
+# Read the cluster state to get the Nomad address.
 data "terraform_remote_state" "cluster" {
   backend = "local"
 
@@ -35,7 +35,8 @@ provider "nomad" {
   secret_id = var.nomad_token != "" ? var.nomad_token : (local.nomad_token != "" ? local.nomad_token : null)
 }
 
-# Deploy the nginx job
+# Deploy the sample nginx job.
 resource "nomad_job" "nginx" {
+  detach  = true
   jobspec = file("${path.module}/../../jobs/nginx.nomad")
 }

@@ -1,6 +1,6 @@
 job "bar" {
   region      = "global"
-  datacenters = ["local-dc"]
+  datacenters = ["dc1"]
   type        = "service"
 
   group "group" {

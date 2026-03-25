@@ -18,11 +18,11 @@ data "terraform_remote_state" "cluster" {
   }
 }
 
-# Read jobs state to get ACL tokens
-data "terraform_remote_state" "jobs" {
+# Read operations state to get ACL tokens
+data "terraform_remote_state" "operations" {
   backend = "local"
   config = {
-    path = "${path.module}/../jobs/terraform.tfstate"
+    path = "${path.module}/../operations/terraform.tfstate"
   }
 }
 
@@ -30,8 +30,8 @@ locals {
   server_names = data.terraform_remote_state.cluster.outputs.server_names
   client_names = data.terraform_remote_state.cluster.outputs.client_names
   all_vms      = concat(local.server_names, local.client_names)
-  # Use provided token, or fall back to admin token from jobs state
-  nomad_token = var.nomad_token != "" ? var.nomad_token : try(data.terraform_remote_state.jobs.outputs.acl_tokens.admin.secret_id, "")
+  # Use provided token, or fall back to admin token from operations state
+  nomad_token = var.nomad_token != "" ? var.nomad_token : try(data.terraform_remote_state.operations.outputs.acl_tokens.admin.secret_id, "")
 }
 
 # Start all VMs
@@ -143,7 +143,7 @@ resource "null_resource" "verify_cluster" {
 }
 
 variable "nomad_token" {
-  description = "Nomad ACL token for verification (optional - falls back to admin token from jobs state)"
+  description = "Nomad ACL token for verification (optional - falls back to admin token from operations state)"
   type        = string
   default     = ""
   sensitive   = true

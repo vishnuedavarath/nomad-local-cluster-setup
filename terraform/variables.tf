@@ -13,7 +13,7 @@ variable "client_count" {
 variable "datacenter" {
   description = "Datacenter name for Nomad/Consul"
   type        = string
-  default     = "local-dc"
+  default     = "dc1"
 }
 
 variable "server_cpus" {

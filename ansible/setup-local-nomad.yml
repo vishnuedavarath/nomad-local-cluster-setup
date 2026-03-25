@@ -78,7 +78,7 @@
     - name: Generate and Transfer Server Configurations
       ansible.builtin.shell: |
         cat <<'EOF' > /tmp/{{ item }}_nomad.hcl
-        datacenter = "local-dc"
+        datacenter = "dc1"
         data_dir   = "/opt/nomad/data"
         bind_addr  = "0.0.0.0"
 
@@ -98,7 +98,7 @@
     - name: Configure and Start Consul Servers
       ansible.builtin.shell: |
         cat <<'EOF' > /tmp/{{ item }}_consul.hcl
-        datacenter = "local-dc"
+        datacenter = "dc1"
         data_dir   = "/opt/consul/data"
         bind_addr  = "0.0.0.0"
         client_addr = "0.0.0.0"
@@ -124,7 +124,7 @@
     - name: Configure and Start Consul on Clients
       ansible.builtin.shell: |
         cat <<'EOF' > /tmp/{{ item }}_consul.hcl
-        datacenter = "local-dc"
+        datacenter = "dc1"
         data_dir   = "/opt/consul/data"
         bind_addr  = "{{ '{{' }} GetInterfaceIP \"enp0s1\" {{ '}}' }}"
         client_addr = "0.0.0.0"
@@ -145,7 +145,7 @@
     - name: Generate and Transfer Client Configurations
       ansible.builtin.shell: |
         cat <<'EOF' > /tmp/{{ item }}_nomad.hcl
-        datacenter = "local-dc"
+        datacenter = "dc1"
         data_dir   = "/opt/nomad/data"
         bind_addr  = "0.0.0.0"
 

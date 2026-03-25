@@ -1,39 +1,5 @@
-# Nomad Namespaces and ACL Configuration
+# Nomad ACL Configuration
 
-# Create namespaces
-resource "nomad_namespace" "development" {
-  name        = "development"
-  description = "Development environment for testing and experimentation"
-
-  meta = {
-    environment = "dev"
-    owner       = "dev-team"
-  }
-}
-
-resource "nomad_namespace" "staging" {
-  name        = "staging"
-  description = "Staging environment for pre-production testing"
-
-  meta = {
-    environment = "staging"
-    owner       = "qa-team"
-  }
-}
-
-resource "nomad_namespace" "production" {
-  name        = "production"
-  description = "Production environment for live workloads"
-
-  meta = {
-    environment = "prod"
-    owner       = "ops-team"
-  }
-}
-
-# ACL Policies
-
-# Developer policy - full access to development namespace
 resource "nomad_acl_policy" "developer" {
   name        = "developer"
   description = "Full access to development namespace"
@@ -68,7 +34,6 @@ resource "nomad_acl_policy" "developer" {
   EOT
 }
 
-# QA/Staging policy - full access to staging, read to dev
 resource "nomad_acl_policy" "staging" {
   name        = "staging"
   description = "Full access to staging namespace"
@@ -104,7 +69,6 @@ resource "nomad_acl_policy" "staging" {
   EOT
 }
 
-# Ops/Production policy - full access to all namespaces
 resource "nomad_acl_policy" "ops" {
   name        = "ops"
   description = "Full access to all namespaces for operations team"
@@ -141,7 +105,6 @@ resource "nomad_acl_policy" "ops" {
   EOT
 }
 
-# Read-only policy for monitoring/observability
 resource "nomad_acl_policy" "readonly" {
   name        = "readonly"
   description = "Read-only access to all namespaces for monitoring"
@@ -162,7 +125,6 @@ resource "nomad_acl_policy" "readonly" {
   EOT
 }
 
-# Create ACL tokens for each role
 resource "nomad_acl_token" "developer" {
   name     = "developer-token"
   type     = "client"
@@ -187,21 +149,10 @@ resource "nomad_acl_token" "readonly" {
   policies = [nomad_acl_policy.readonly.name]
 }
 
-# Admin token with full management access
 resource "nomad_acl_token" "admin" {
   name   = "admin-token"
   type   = "management"
   global = true
-}
-
-# Outputs
-output "namespaces" {
-  description = "Created namespaces"
-  value = {
-    development = nomad_namespace.development.name
-    staging     = nomad_namespace.staging.name
-    production  = nomad_namespace.production.name
-  }
 }
 
 output "acl_tokens" {
