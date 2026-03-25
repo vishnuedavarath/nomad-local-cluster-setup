@@ -13,7 +13,7 @@ variable "client_count" {
 variable "datacenter" {
   description = "Datacenter name for Nomad/Consul"
   type        = string
-  default     = "local-dc"
+  default     = "dc1"
 }
 
 variable "server_cpus" {
@@ -50,4 +50,10 @@ variable "client_disk" {
   description = "Disk size for client VMs (e.g., '10G')"
   type        = string
   default     = "10G"
+}
+
+variable "enable_acl" {
+  description = "Enable Nomad ACL system"
+  type        = bool
+  default     = true
 }
