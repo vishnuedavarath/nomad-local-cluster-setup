@@ -67,6 +67,27 @@ variable "client_disk" {
   default     = "10G"
 }
 
+variable "vm_image" {
+  description = <<-EOT
+    Image to launch with Multipass. Multipass does not ship official Debian
+    images in its image stream, so this defaults to the official Debian 12
+    (bookworm) generic cloud image (arm64) hosted on cloud.debian.org.
+    On Intel Macs / amd64 hosts, override to the amd64 image:
+      https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2
+    You may also pass an Ubuntu LTS alias (e.g. "24.04", "noble", "jammy"),
+    a local file:// path, or any URL to a cloud-init enabled qcow2 image.
+    NOTE: Custom-URL images require the QEMU driver on macOS
+    (`multipass set local.driver=qemu`).
+  EOT
+  type        = string
+  default     = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2"
+
+  validation {
+    condition     = trimspace(var.vm_image) != ""
+    error_message = "vm_image must not be empty."
+  }
+}
+
 variable "enable_acl" {
   description = "Enable Nomad ACL system"
   type        = bool

@@ -58,6 +58,7 @@ resource "multipass_instance" "nomad_servers" {
   count = var.server_count
 
   name   = local.server_names[count.index]
+  image  = var.vm_image
   cpus   = var.server_cpus
   memory = var.server_memory
   disk   = var.server_disk
@@ -68,6 +69,7 @@ resource "multipass_instance" "nomad_clients" {
   count = var.client_count
 
   name   = local.client_names[count.index]
+  image  = var.vm_image
   cpus   = var.client_cpus
   memory = var.client_memory
   disk   = var.client_disk
