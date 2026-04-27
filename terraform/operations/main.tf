@@ -1,4 +1,6 @@
 terraform {
+  required_version = ">= 1.5.0"
+
   required_providers {
     nomad = {
       source  = "hashicorp/nomad"
@@ -36,13 +38,21 @@ data "terraform_remote_state" "cluster" {
 }
 
 locals {
-  nomad_address = data.terraform_remote_state.cluster.outputs.nomad_ui_url
-  nomad_token   = try(data.terraform_remote_state.cluster.outputs.acl_bootstrap_token, "")
+  nomad_address             = data.terraform_remote_state.cluster.outputs.nomad_ui_url
+  bootstrap_token_file      = "${path.module}/../.nomad_acl_bootstrap.json"
+  bootstrap_token_from_file = fileexists(local.bootstrap_token_file) ? try(jsondecode(file(local.bootstrap_token_file)).SecretID, "") : ""
+
+  cluster_nomad_token_raw = try(data.terraform_remote_state.cluster.outputs.acl_bootstrap_token, "")
+  cluster_nomad_token     = local.cluster_nomad_token_raw == "Bootstrap failed or already done" ? "" : local.cluster_nomad_token_raw
+
+  effective_nomad_token = var.nomad_token != "" ? var.nomad_token : (
+    local.bootstrap_token_from_file != "" ? local.bootstrap_token_from_file : local.cluster_nomad_token
+  )
 }
 
 provider "nomad" {
   address   = local.nomad_address
-  secret_id = var.nomad_token != "" ? var.nomad_token : (local.nomad_token != "" ? local.nomad_token : null)
+  secret_id = local.effective_nomad_token != "" ? local.effective_nomad_token : null
 }
 
 resource "null_resource" "update_zshrc" {

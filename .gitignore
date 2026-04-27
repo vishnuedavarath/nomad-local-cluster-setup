@@ -43,3 +43,6 @@ terraform.rc
 # Temporary files
 /tmp/
 *.tmp
+
+#dex
+*.dex

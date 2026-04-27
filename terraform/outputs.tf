@@ -44,3 +44,13 @@ output "nomad_token_export" {
   value       = var.enable_acl ? "export NOMAD_TOKEN=${local.acl_bootstrap_token}" : "ACL disabled - no token needed"
   sensitive   = true
 }
+
+output "nomad_edition" {
+  description = "Nomad edition installed on the cluster"
+  value       = var.nomad_edition
+}
+
+output "nomad_release_version" {
+  description = "Resolved Nomad release version installed on the cluster"
+  value       = local.nomad_release_version
+}
