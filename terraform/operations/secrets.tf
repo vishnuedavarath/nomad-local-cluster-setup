@@ -5,25 +5,14 @@ resource "nomad_variable" "db_credentials" {
   path      = "secrets/database"
   namespace = nomad_namespace.development.name
 
-  items = {
-    username = "app_user"
-    password = "super-secret-password-123"
-    host     = "db.example.com"
-    port     = "5432"
-    database = "myapp"
-  }
+  items = var.development_database_secret
 }
 
 resource "nomad_variable" "api_keys" {
   path      = "secrets/api"
   namespace = nomad_namespace.development.name
 
-  items = {
-    stripe_key     = "sk_test_abc123"
-    sendgrid_key   = "SG.xyz789"
-    aws_access_key = "AKIAIOSFODNN7EXAMPLE"
-    aws_secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-  }
+  items = var.development_api_keys
 }
 
 resource "nomad_variable" "tls_certs" {
@@ -52,22 +41,14 @@ resource "nomad_variable" "staging_secrets" {
   path      = "secrets/app"
   namespace = nomad_namespace.staging.name
 
-  items = {
-    jwt_secret  = "staging-jwt-secret-key"
-    session_key = "staging-session-encryption-key"
-    admin_email = "admin@staging.example.com"
-  }
+  items = var.staging_app_secrets
 }
 
 resource "nomad_variable" "production_secrets" {
   path      = "secrets/app"
   namespace = nomad_namespace.production.name
 
-  items = {
-    jwt_secret  = "production-jwt-secret-key-very-secure"
-    session_key = "production-session-encryption-key"
-    admin_email = "admin@example.com"
-  }
+  items = var.production_app_secrets
 }
 
 output "secret_paths" {

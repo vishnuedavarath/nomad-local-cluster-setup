@@ -14,6 +14,12 @@ This Terraform configuration provisions a local Nomad + Consul cluster using Mul
 # Initialize Terraform
 terraform init
 
+# Option 1: export the Enterprise license contents directly
+export TF_VAR_nomad_enterprise_license='YOUR_LICENSE_CONTENTS'
+
+# Option 2: point Terraform at an existing .hclic file
+export TF_VAR_nomad_enterprise_license_file="$HOME/licenses/nomad-enterprise.hclic"
+
 # Preview changes
 terraform plan
 
@@ -38,7 +44,12 @@ server_disk   = "5G"
 client_cpus   = 1
 client_memory = "2G"
 client_disk   = "10G"
+nomad_edition = "enterprise"
+nomad_version = "1.11.3"
+nomad_enterprise_license_file = "~/licenses/nomad-enterprise.hclic"
 ```
+
+When `nomad_edition = "enterprise"`, provide either `nomad_enterprise_license` or `nomad_enterprise_license_file`. The root module reads the license from your local machine, installs the `+ent` binary from the HashiCorp releases site, and writes the license to each server at `/etc/nomad.d/license.hclic` by default.
 
 ## Outputs
 
@@ -52,6 +63,10 @@ After `terraform apply`, you'll see:
 
 - **3 Nomad Server VMs**: Run Nomad and Consul in server mode (HA cluster)
 - **3 Nomad Client VMs**: Run Nomad and Consul in client mode with Docker
+
+## Upgrading an Existing OSS Cluster
+
+This module now defaults to Nomad Enterprise. For an existing OSS cluster, provide the license contents or a local `.hclic` file and run `terraform apply` from the root module. The install resources are version-triggered, so Terraform will stop Nomad, replace the binary with the Enterprise release, write the server license file, and restart the cluster with the Enterprise binary.
 
 ## Running Jobs
 
@@ -72,6 +87,7 @@ The Terraform layout is separated by responsibility:
 - `./` provisions the local Nomad and Consul cluster
 - `operations/` manages shared namespaces, ACLs, secrets, and host volumes
 - `development/` deploys sample or development workloads
+- `oidc/` runs a local Dex OIDC provider in Docker on a client VM and outputs the values needed for a separate Nomad ACL auth method config
 
 Deploy operational configuration:
 
@@ -89,7 +105,15 @@ terraform init
 terraform apply
 ```
 
-See [operations/README.md](operations/README.md) and [development/README.md](development/README.md) for details.
+Deploy local OIDC separately:
+
+```bash
+cd oidc
+terraform init
+terraform apply
+```
+
+See [oidc/README.md](oidc/README.md) and [development/README.md](development/README.md) for details.
 
 ## Troubleshooting
 

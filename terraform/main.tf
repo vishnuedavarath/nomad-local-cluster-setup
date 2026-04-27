@@ -1,8 +1,14 @@
 terraform {
+  required_version = ">= 1.5.0"
+
   required_providers {
     multipass = {
       source  = "larstobi/multipass"
       version = "~> 1.4"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
     }
     random = {
       source  = "hashicorp/random"
@@ -11,10 +17,6 @@ terraform {
     time = {
       source  = "hashicorp/time"
       version = "~> 0.10"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.4"
     }
   }
 }
@@ -43,8 +45,12 @@ resource "random_id" "client_suffix" {
 }
 
 locals {
-  server_names = [for i, id in random_id.server_suffix : "nomad-server-${id.hex}"]
-  client_names = [for i, id in random_id.client_suffix : "nomad-client-${id.hex}"]
+  nomad_enterprise_enabled = var.nomad_edition == "enterprise"
+  nomad_release_version    = local.nomad_enterprise_enabled ? "${var.nomad_version}+ent" : var.nomad_version
+  nomad_license_source     = trimspace(var.nomad_enterprise_license_file) != "" ? pathexpand(var.nomad_enterprise_license_file) : ""
+  nomad_license_content    = trimspace(var.nomad_enterprise_license) != "" ? trimspace(var.nomad_enterprise_license) : (local.nomad_license_source != "" ? trimspace(file(local.nomad_license_source)) : "")
+  server_names             = [for i, id in random_id.server_suffix : "nomad-server-${id.hex}"]
+  client_names             = [for i, id in random_id.client_suffix : "nomad-client-${id.hex}"]
 }
 
 # --- STEP 1: LAUNCH SERVER VMS ---
@@ -89,6 +95,12 @@ resource "null_resource" "install_nomad_servers" {
 
   depends_on = [time_sleep.wait_for_vms]
 
+  triggers = {
+    nomad_edition = var.nomad_edition
+    nomad_version = local.nomad_release_version
+    instance_name = local.server_names[count.index]
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       # Wait for cloud-init to complete
@@ -96,11 +108,26 @@ resource "null_resource" "install_nomad_servers" {
       multipass exec ${local.server_names[count.index]} -- sudo killall apt apt-get dpkg || true
       multipass exec ${local.server_names[count.index]} -- sudo dpkg --configure -a
       multipass exec ${local.server_names[count.index]} -- sudo apt-get update
-      multipass exec ${local.server_names[count.index]} -- sudo apt-get install wget gpg coreutils -y
+      multipass exec ${local.server_names[count.index]} -- sudo apt-get install wget unzip gpg coreutils -y
       multipass exec ${local.server_names[count.index]} -- bash -c 'wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg --yes'
       multipass exec ${local.server_names[count.index]} -- bash -c 'echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list'
       multipass exec ${local.server_names[count.index]} -- sudo apt-get update
       multipass exec ${local.server_names[count.index]} -- sudo apt-get install nomad consul -y
+      multipass exec ${local.server_names[count.index]} -- sudo systemctl stop nomad || true
+      multipass exec ${local.server_names[count.index]} -- bash -lc '
+        set -euo pipefail
+        case "$(uname -m)" in
+          aarch64|arm64) ARCH="arm64" ;;
+          x86_64|amd64) ARCH="amd64" ;;
+          *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        NOMAD_VERSION="${local.nomad_release_version}"
+        NOMAD_ZIP="nomad_${local.nomad_release_version}_linux_$${ARCH}.zip"
+        wget -q -O /tmp/$NOMAD_ZIP "https://releases.hashicorp.com/nomad/$NOMAD_VERSION/$NOMAD_ZIP"
+        unzip -oq /tmp/$NOMAD_ZIP -d /tmp/nomad-install
+        sudo install -m 0755 /tmp/nomad-install/nomad /usr/bin/nomad
+        rm -rf /tmp/nomad-install /tmp/$NOMAD_ZIP
+      '
     EOT
   }
 }
@@ -110,6 +137,12 @@ resource "null_resource" "install_nomad_clients" {
 
   depends_on = [time_sleep.wait_for_vms]
 
+  triggers = {
+    nomad_edition = var.nomad_edition
+    nomad_version = local.nomad_release_version
+    instance_name = local.client_names[count.index]
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       # Wait for cloud-init to complete
@@ -117,11 +150,26 @@ resource "null_resource" "install_nomad_clients" {
       multipass exec ${local.client_names[count.index]} -- sudo killall apt apt-get dpkg || true
       multipass exec ${local.client_names[count.index]} -- sudo dpkg --configure -a
       multipass exec ${local.client_names[count.index]} -- sudo apt-get update
-      multipass exec ${local.client_names[count.index]} -- sudo apt-get install wget gpg coreutils -y
+      multipass exec ${local.client_names[count.index]} -- sudo apt-get install wget unzip gpg coreutils -y
       multipass exec ${local.client_names[count.index]} -- bash -c 'wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg --yes'
       multipass exec ${local.client_names[count.index]} -- bash -c 'echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list'
       multipass exec ${local.client_names[count.index]} -- sudo apt-get update
       multipass exec ${local.client_names[count.index]} -- sudo apt-get install nomad consul -y
+      multipass exec ${local.client_names[count.index]} -- sudo systemctl stop nomad || true
+      multipass exec ${local.client_names[count.index]} -- bash -lc '
+        set -euo pipefail
+        case "$(uname -m)" in
+          aarch64|arm64) ARCH="arm64" ;;
+          x86_64|amd64) ARCH="amd64" ;;
+          *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        NOMAD_VERSION="${local.nomad_release_version}"
+        NOMAD_ZIP="nomad_${local.nomad_release_version}_linux_$${ARCH}.zip"
+        wget -q -O /tmp/$NOMAD_ZIP "https://releases.hashicorp.com/nomad/$NOMAD_VERSION/$NOMAD_ZIP"
+        unzip -oq /tmp/$NOMAD_ZIP -d /tmp/nomad-install
+        sudo install -m 0755 /tmp/nomad-install/nomad /usr/bin/nomad
+        rm -rf /tmp/nomad-install /tmp/$NOMAD_ZIP
+      '
     EOT
   }
 }
@@ -148,8 +196,12 @@ resource "null_resource" "configure_nomad_servers" {
   depends_on = [null_resource.install_nomad_servers]
 
   triggers = {
-    datacenter  = var.datacenter
-    server_name = local.server_names[count.index]
+    datacenter           = var.datacenter
+    server_name          = local.server_names[count.index]
+    nomad_edition        = var.nomad_edition
+    nomad_version        = local.nomad_release_version
+    nomad_license_path   = var.nomad_enterprise_license_path
+    nomad_license_digest = local.nomad_enterprise_enabled ? sha256(local.nomad_license_content) : "oss"
   }
 
   provisioner "local-exec" {
@@ -162,6 +214,9 @@ bind_addr  = "0.0.0.0"
 server {
   enabled          = true
   bootstrap_expect = ${var.server_count}
+%{if local.nomad_enterprise_enabled~}
+  license_path     = "${var.nomad_enterprise_license_path}"
+%{endif~}
   server_join {
     retry_join = ${local.retry_join_string}
   }
@@ -173,6 +228,14 @@ acl {
 }
 %{endif~}
 EOF
+%{if local.nomad_enterprise_enabled~}
+  cat <<'EOF' > /tmp/${local.server_names[count.index]}_license.hclic
+${local.nomad_license_content}
+EOF
+  multipass transfer /tmp/${local.server_names[count.index]}_license.hclic ${local.server_names[count.index]}:/tmp/license.hclic
+  multipass exec ${local.server_names[count.index]} -- sudo install -D -o root -g nomad -m 0640 /tmp/license.hclic ${var.nomad_enterprise_license_path}
+  multipass exec ${local.server_names[count.index]} -- rm -f /tmp/license.hclic
+%{endif~}
       multipass transfer /tmp/${local.server_names[count.index]}_nomad.hcl ${local.server_names[count.index]}:/tmp/nomad.hcl
       multipass exec ${local.server_names[count.index]} -- sudo mv /tmp/nomad.hcl /etc/nomad.d/nomad.hcl
       multipass exec ${local.server_names[count.index]} -- sudo systemctl restart nomad
@@ -225,8 +288,9 @@ resource "null_resource" "configure_consul_clients" {
   depends_on = [null_resource.install_nomad_clients]
 
   triggers = {
-    datacenter  = var.datacenter
-    client_name = local.client_names[count.index]
+    datacenter    = var.datacenter
+    client_name   = local.client_names[count.index]
+    nomad_edition = var.nomad_edition
   }
 
   provisioner "local-exec" {
@@ -261,8 +325,10 @@ resource "null_resource" "configure_nomad_clients" {
   ]
 
   triggers = {
-    datacenter  = var.datacenter
-    client_name = local.client_names[count.index]
+    datacenter    = var.datacenter
+    client_name   = local.client_names[count.index]
+    nomad_edition = var.nomad_edition
+    nomad_version = local.nomad_release_version
   }
 
   provisioner "local-exec" {
@@ -326,19 +392,21 @@ resource "null_resource" "bootstrap_acl" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      # Bootstrap ACL and save the token
-      multipass exec ${local.server_names[0]} -- nomad acl bootstrap -json > /tmp/nomad_acl_bootstrap.json 2>/dev/null || true
+      # Bootstrap ACL on the server, then copy the result to the local module path.
+      VM_BOOTSTRAP_FILE="/tmp/nomad_acl_bootstrap.json"
+      HOST_BOOTSTRAP_FILE="${path.module}/.nomad_acl_bootstrap.json"
+
+      # Ensure a readable local file exists even if bootstrap was already done.
+      printf '{}\n' > "$HOST_BOOTSTRAP_FILE"
+
+      multipass exec ${local.server_names[0]} -- bash -lc "nomad acl bootstrap -json > $VM_BOOTSTRAP_FILE" 2>/dev/null || true
+      multipass transfer ${local.server_names[0]}:$VM_BOOTSTRAP_FILE "$HOST_BOOTSTRAP_FILE" 2>/dev/null || true
     EOT
   }
 }
 
-# Read the bootstrap token from the file
-data "local_file" "acl_bootstrap" {
-  count      = var.enable_acl ? 1 : 0
-  depends_on = [null_resource.bootstrap_acl]
-  filename   = "/tmp/nomad_acl_bootstrap.json"
-}
-
 locals {
-  acl_bootstrap_token = var.enable_acl ? try(jsondecode(data.local_file.acl_bootstrap[0].content).SecretID, "Bootstrap failed or already done") : "ACL disabled"
+  acl_bootstrap_file  = "${path.module}/.nomad_acl_bootstrap.json"
+  acl_bootstrap_json  = fileexists(local.acl_bootstrap_file) ? file(local.acl_bootstrap_file) : "{}"
+  acl_bootstrap_token = var.enable_acl ? try(jsondecode(local.acl_bootstrap_json).SecretID, "Bootstrap failed or already done") : "ACL disabled"
 }
