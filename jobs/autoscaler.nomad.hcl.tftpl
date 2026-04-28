@@ -1,0 +1,107 @@
+job "nomad-autoscaler" {
+  datacenters = ["${datacenter}"]
+  namespace   = "${namespace}"
+  type        = "service"
+
+  meta = {
+    managed_by  = "terraform"
+    source      = "${use_local_binary ? "local-binary" : "released"}"
+    version     = "${autoscaler_ver}"
+    binary_hash = "${binary_hash}"
+  }
+
+  group "autoscaler" {
+    count = 1
+
+    network {
+      port "http" {
+        static = 8080
+      }
+    }
+
+    service {
+      name     = "nomad-autoscaler"
+      port     = "http"
+      provider = "consul"
+      tags     = ["nomad-autoscaler", "metrics"]
+
+      check {
+        type     = "http"
+        path     = "/v1/health"
+        interval = "10s"
+        timeout  = "2s"
+      }
+    }
+
+    task "autoscaler" {
+      driver = "raw_exec"
+
+%{ if use_local_binary ~}
+      config {
+        command = "${local_binary}"
+        args = [
+          "agent",
+          "-config=$${NOMAD_TASK_DIR}/config.hcl",
+        ]
+      }
+%{ else ~}
+      artifact {
+        source      = "https://releases.hashicorp.com/nomad-autoscaler/${autoscaler_ver}/nomad-autoscaler_${autoscaler_ver}_linux_$${attr.cpu.arch}.zip"
+        destination = "local/"
+      }
+
+      config {
+        command = "$${NOMAD_TASK_DIR}/nomad-autoscaler"
+        args = [
+          "agent",
+          "-config=$${NOMAD_TASK_DIR}/config.hcl",
+        ]
+      }
+%{ endif ~}
+
+      template {
+        destination = "$${NOMAD_TASK_DIR}/config.hcl"
+        change_mode = "restart"
+        data        = <<-EOH
+          log_level = "INFO"
+
+          http {
+            bind_address = "0.0.0.0"
+            bind_port    = 8080
+          }
+
+          nomad {
+            address = "${nomad_address}"
+%{ if nomad_token != "" ~}
+            token   = "${nomad_token}"
+%{ endif ~}
+          }
+
+          policy_eval {
+            workers = {
+              cluster    = 10
+              horizontal = 10
+            }
+          }
+
+          apm "nomad-apm" {
+            driver = "nomad-apm"
+          }
+
+          target "nomad-target" {
+            driver = "nomad-target"
+          }
+
+          strategy "target-value" {
+            driver = "target-value"
+          }
+        EOH
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+    }
+  }
+}

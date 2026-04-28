@@ -1,0 +1,53 @@
+job "fabio" {
+  datacenters = ["${datacenter}"]
+  namespace   = "${namespace}"
+  type        = "system"
+
+  meta = {
+    managed_by = "terraform"
+  }
+
+  group "fabio" {
+    network {
+      port "lb" {
+        static = 9999
+      }
+      port "ui" {
+        static = 9998
+      }
+    }
+
+    service {
+      name     = "fabio"
+      port     = "lb"
+      provider = "consul"
+
+      check {
+        type     = "http"
+        port     = "ui"
+        path     = "/health"
+        interval = "10s"
+        timeout  = "2s"
+      }
+    }
+
+    task "fabio" {
+      driver = "docker"
+
+      config {
+        image        = "fabiolb/fabio"
+        network_mode = "host"
+        args = [
+          "-proxy.strategy=rnd",
+          "-registry.consul.addr=$${attr.unique.network.ip-address}:8500",
+          "-ui.addr=:9998",
+        ]
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+job "webapp" {
+  datacenters = ["${datacenter}"]
+  namespace   = "${namespace}"
+  type        = "service"
+
+  meta = {
+    managed_by = "terraform"
+    app        = "${service_name}"
+  }
+
+  group "web" {
+    count = ${replicas}
+
+%{ if enable_scaling ~}
+    scaling {
+      enabled = true
+      min     = ${min_count}
+      max     = ${max_count}
+
+      policy {
+        cooldown            = "1m"
+        evaluation_interval = "30s"
+
+        check "avg_cpu" {
+          source = "nomad-apm"
+          query  = "avg_cpu-allocated"
+
+          strategy "target-value" {
+            target = ${target_cpu_pct}
+          }
+        }
+      }
+    }
+%{ endif ~}
+
+    network {
+      port "http" {
+        to = 80
+      }
+    }
+
+    service {
+      name     = "${service_name}"
+      port     = "http"
+      provider = "consul"
+      tags = [
+        "${service_name}",
+        "urlprefix-/",
+      ]
+
+      check {
+        type     = "http"
+        path     = "/"
+        interval = "10s"
+        timeout  = "2s"
+      }
+    }
+
+    task "web" {
+      driver = "docker"
+
+      config {
+        image = "${image}"
+        ports = ["http"]
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+    }
+  }
+}
