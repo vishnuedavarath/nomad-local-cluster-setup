@@ -1,131 +1,193 @@
 # Nomad Local Cluster - Terraform
 
-This Terraform configuration provisions a local Nomad + Consul cluster using Multipass VMs.
+Modular, fully configurable Terraform setup for running a Nomad + Consul cluster on local Multipass VMs.
 
-## Prerequisites
+## Architecture
 
-- [Terraform](https://www.terraform.io/downloads) >= 1.0
-- [Multipass](https://multipass.run/) installed and running
-- Sufficient system resources (3 servers + 3 clients by default)
+```
+terraform/
+├── environments/
+│   └── local/                    # Root config (compose modules here)
+│       ├── main.tf               # Module composition & providers
+│       ├── variables.tf          # All input variables
+│       ├── outputs.tf            # Cluster outputs
+│       ├── versions.tf           # Provider version constraints
+│       ├── terraform.tfvars      # YOUR configuration (edit this)
+│       └── terraform.tfvars.example  # Documented example with all options
+└── modules/
+    ├── multipass-instances/      # VM lifecycle only (launch/destroy)
+    ├── nomad-cluster/            # Install & configure Nomad + Consul
+    ├── nomad-acl/                # ACL policies & tokens (ops, admin, etc.)
+    ├── nomad-namespaces/         # Namespace management
+    ├── nomad-secrets/            # Nomad Variables (secret storage)
+    ├── nomad-volumes/            # Host volume setup on clients
+    ├── nomad-jobs/               # Job deployment (plain & templated)
+    ├── nomad-autoscaler/         # Autoscaler deployment
+    └── nomad-oidc/               # Dex OIDC provider + auth method
+```
 
-## Usage
+## Key Design Principles
+
+1. **Decoupled phases**: VM provisioning (`multipass-instances`) is completely separate from cluster setup (`nomad-cluster`) and Nomad configuration (ACL, namespaces, jobs, etc.)
+2. **Everything configurable via tfvars**: All values (VM specs, versions, features, namespaces, volumes, secrets, OIDC) are in `terraform.tfvars`
+3. **Feature toggles**: Each capability (`enable_acl`, `enable_oidc`, `enable_autoscaler`, etc.) can be independently enabled/disabled
+4. **Two-phase apply**: Infrastructure first, then Nomad configuration
+5. **Ops token for operations**: Bootstrap/admin tokens are reserved for ACL management; an ops token is used for day-to-day operations (autoscaler, exported `NOMAD_TOKEN`)
+
+## Quick Start
 
 ```bash
-# Initialize Terraform
+cd environments/local
+
+# Copy example config and customize
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars to your needs
+
+# Initialize
 terraform init
 
-# Option 1: export the Enterprise license contents directly
-export TF_VAR_nomad_enterprise_license='YOUR_LICENSE_CONTENTS'
+# Phase 1: Launch VMs and bootstrap the cluster
+terraform apply -target=module.instances -target=module.cluster
 
-# Option 2: point Terraform at an existing .hclic file
-export TF_VAR_nomad_enterprise_license_file="$HOME/licenses/nomad-enterprise.hclic"
-
-# Preview changes
-terraform plan
-
-# Apply configuration
+# Phase 2: Enable Nomad-dependent modules
+# Edit terraform.tfvars: set enable_nomad_setup = true
 terraform apply
-
-# Destroy cluster
-terraform destroy
 ```
 
 ## Configuration
 
-Customize the cluster by creating a `terraform.tfvars` file:
+Edit `environments/local/terraform.tfvars` to customize. See `terraform.tfvars.example` for a fully documented template.
 
-```hcl
-server_count  = 3
-client_count  = 3
-datacenter    = "dc1"
-server_cpus   = 1
-server_memory = "1G"
-server_disk   = "5G"
-client_cpus   = 1
-client_memory = "2G"
-client_disk   = "10G"
-nomad_edition = "enterprise"
-nomad_version = "1.11.3"
-nomad_enterprise_license_file = "~/licenses/nomad-enterprise.hclic"
+| Section | What it controls |
+|---------|-----------------|
+| VM Infrastructure | VM count, resources (CPU/RAM/disk), image, name prefixes |
+| Cluster Configuration | Datacenter, Nomad version/edition, ACL, Docker, delays |
+| Feature Toggles | Enable/disable each module independently |
+| Namespaces | Map of namespaces with descriptions and metadata |
+| Host Volumes | Map of host volumes with paths and permissions |
+| Secrets | Nomad Variables to store in specific namespaces |
+| Jobs | Plain and templated job files to deploy |
+| Custom ACL Policies | Additional ACL policies beyond built-in defaults |
+| Autoscaler | Version, local binary mode, namespace |
+| OIDC | Dex runtime, admin credentials, auth method, binding rules |
+
+## Module Dependency Graph
+
+```
+multipass-instances
+       │
+       ▼
+  nomad-cluster
+       │
+       ├──► nomad-acl
+       ├──► nomad-namespaces ──► nomad-secrets
+       ├──► nomad-volumes
+       ├──► nomad-jobs (depends on namespaces + volumes)
+       ├──► nomad-autoscaler (depends on acl + namespaces)
+       └──► nomad-oidc (depends on acl + cluster)
 ```
 
-When `nomad_edition = "enterprise"`, provide either `nomad_enterprise_license` or `nomad_enterprise_license_file`. The root module reads the license from your local machine, installs the `+ent` binary from the HashiCorp releases site, and writes the license to each server at `/etc/nomad.d/license.hclic` by default.
+## Token Hierarchy
+
+When ACL is enabled, the following tokens are created:
+
+| Token | Purpose | Used by |
+|-------|---------|---------|
+| Bootstrap | Initial cluster token, written to `.nomad_acl_bootstrap.json` | Nomad provider auth |
+| Admin | Full management access | ACL administration |
+| Ops | Operational access (read/write jobs, nodes) | Autoscaler, exported `NOMAD_TOKEN` |
+| Developer | Scoped to development namespaces | Dev workflows |
+| Readonly | Read-only cluster access | Monitoring |
+
+## OIDC Authentication
+
+When `enable_oidc = true`, the module:
+
+1. Deploys a [Dex](https://dexidp.io/) OIDC identity provider (Docker container on host or VM)
+2. Creates a `nomad_acl_auth_method` pointing to Dex
+3. Sets up binding rules (admin user → management token, plus custom rules)
+
+Configure via tfvars:
+
+```hcl
+enable_oidc                    = true
+oidc_create_auth_method        = true
+oidc_auth_method_name          = "local-dex"
+oidc_auth_method_max_token_ttl = "8h"
+oidc_make_default_auth_method  = true
+
+# Additional binding rules
+oidc_binding_rules = {
+  developers = {
+    description = "Map engineering group to developer policy"
+    selector    = "\"engineering\" in list.groups"
+    bind_type   = "policy"
+    bind_name   = "developer"
+  }
+}
+```
+
+Login with: `nomad login -method=local-dex -oidc-callback-addr=localhost:4649`
+
+## Examples
+
+### Minimal cluster (3 servers, 1 client, no ACL)
+
+```hcl
+server_count       = 3
+client_count       = 1
+enable_acl         = false
+enable_nomad_setup = true
+enable_jobs        = false
+enable_autoscaler  = false
+enable_oidc        = false
+```
+
+### Enterprise with OIDC
+
+```hcl
+nomad_edition                 = "enterprise"
+nomad_enterprise_license_file = "~/licenses/nomad-enterprise.hclic"
+enable_acl                    = true
+enable_oidc                   = true
+enable_nomad_setup            = true
+```
+
+### Custom namespaces and volumes
+
+```hcl
+namespaces = {
+  team-alpha = {
+    description = "Team Alpha workspace"
+    meta        = { team = "alpha" }
+  }
+  team-beta = {
+    description = "Team Beta workspace"
+    meta        = { team = "beta" }
+  }
+}
+
+host_volumes = {
+  postgres-data = {
+    path        = "/opt/nomad/volumes/postgres"
+    read_only   = false
+    permissions = "700"
+  }
+  shared-cache = {
+    path        = "/opt/nomad/volumes/cache"
+    read_only   = false
+    permissions = "777"
+  }
+}
+```
 
 ## Outputs
 
-After `terraform apply`, you'll see:
-
-- **nomad_ui_url**: URL to access the Nomad UI
-- **consul_ui_url**: URL to access the Consul UI  
-- **nomad_addr_export**: Command to set `NOMAD_ADDR` environment variable
-
-## Architecture
-
-- **3 Nomad Server VMs**: Run Nomad and Consul in server mode (HA cluster)
-- **3 Nomad Client VMs**: Run Nomad and Consul in client mode with Docker
-
-## Upgrading an Existing OSS Cluster
-
-This module now defaults to Nomad Enterprise. For an existing OSS cluster, provide the license contents or a local `.hclic` file and run `terraform apply` from the root module. The install resources are version-triggered, so Terraform will stop Nomad, replace the binary with the Enterprise release, write the server license file, and restart the cluster with the Enterprise binary.
-
-## Running Jobs
-
-After the cluster is up:
+After apply, useful outputs are available:
 
 ```bash
-# Set the Nomad address (use the output from terraform apply)
-export NOMAD_ADDR=http://<server-ip>:4646
-
-# Run the nginx job
-nomad job run ../jobs/nginx.nomad
-```
-
-## Additional Terraform Workspaces
-
-The Terraform layout is separated by responsibility:
-
-- `./` provisions the local Nomad and Consul cluster
-- `operations/` manages shared namespaces, ACLs, secrets, and host volumes
-- `development/` deploys sample or development workloads
-- `oidc/` runs a local Dex OIDC provider in Docker on a client VM and outputs the values needed for a separate Nomad ACL auth method config
-
-Deploy operational configuration:
-
-```bash
-cd operations
-terraform init
-terraform apply
-```
-
-Deploy development workloads:
-
-```bash
-cd development
-terraform init
-terraform apply
-```
-
-Deploy local OIDC separately:
-
-```bash
-cd oidc
-terraform init
-terraform apply
-```
-
-See [oidc/README.md](oidc/README.md) and [development/README.md](development/README.md) for details.
-
-## Troubleshooting
-
-### Check Service Logs
-
-```bash
-multipass exec <vm-name> -- sudo journalctl -u nomad -f
-multipass exec <vm-name> -- sudo journalctl -u consul -f
-```
-
-### SSH into a VM
-
-```bash
-multipass shell <vm-name>
+terraform output nomad_ui_url          # Nomad UI address
+terraform output nomad_token_export    # export NOMAD_TOKEN=... (ops token)
+terraform output ops_token             # Ops token value (sensitive)
+terraform output -json oidc_issuer_url # OIDC issuer URL
 ```

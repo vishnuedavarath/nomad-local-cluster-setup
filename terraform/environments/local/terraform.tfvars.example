@@ -1,0 +1,238 @@
+# =============================================================================
+# terraform.tfvars.example
+# =============================================================================
+# Copy this file to terraform.tfvars and customize for your environment.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# =============================================================================
+
+# --------------------------------------------------------------------------- #
+# VM Infrastructure
+# --------------------------------------------------------------------------- #
+
+server_count       = 3        # Must be odd (1, 3, 5) for quorum
+client_count       = 3        # At least 1
+server_name_prefix = "nomad-server"
+client_name_prefix = "nomad-client"
+
+# Apple Silicon (arm64):
+vm_image = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2"
+# Intel (amd64):
+# vm_image = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+# Ubuntu (simple alias):
+# vm_image = "24.04"
+
+server_cpus   = 1
+server_memory = "1G"
+server_disk   = "5G"
+
+client_cpus   = 1
+client_memory = "2G"
+client_disk   = "10G"
+
+# --------------------------------------------------------------------------- #
+# Cluster Configuration
+# --------------------------------------------------------------------------- #
+
+datacenter    = "dc1"
+nomad_edition = "oss"       # "oss" or "enterprise"
+nomad_version = "1.11.3"
+
+# Enterprise license (required when nomad_edition = "enterprise"):
+# nomad_enterprise_license_file = "~/licenses/nomad-enterprise.hclic"
+# nomad_license_path_on_vm      = "/etc/nomad.d/license.hclic"
+# nomad_enterprise_license      = ""  # Or paste license content directly
+
+enable_acl            = true
+enable_raw_exec       = true
+enable_docker_volumes = true
+install_docker        = true
+vm_ready_delay        = "30s"
+cluster_stabilize_delay = "15s"
+
+# --------------------------------------------------------------------------- #
+# Feature Toggles
+# --------------------------------------------------------------------------- #
+
+# Phase 1: Set to false, apply to create VMs + cluster
+# Phase 2: Set to true, apply to configure Nomad resources
+enable_nomad_setup = false
+
+enable_host_volumes = true
+enable_jobs         = true
+enable_autoscaler   = false
+enable_oidc         = false
+
+# --------------------------------------------------------------------------- #
+# Namespaces
+# --------------------------------------------------------------------------- #
+
+namespaces = {
+  development = {
+    description = "Development environment for testing and experimentation"
+    meta        = { environment = "dev", owner = "dev-team" }
+  }
+  staging = {
+    description = "Staging environment for pre-production testing"
+    meta        = { environment = "staging", owner = "qa-team" }
+  }
+  production = {
+    description = "Production environment for live workloads"
+    meta        = { environment = "prod", owner = "ops-team" }
+  }
+}
+
+# --------------------------------------------------------------------------- #
+# Host Volumes
+# --------------------------------------------------------------------------- #
+
+host_volumes = {
+  data = {
+    path        = "/opt/nomad/volumes/data"
+    read_only   = false
+    permissions = "777"
+  }
+  secrets = {
+    path        = "/opt/nomad/volumes/secrets"
+    read_only   = false
+    permissions = "700"
+  }
+  logs = {
+    path        = "/opt/nomad/volumes/logs"
+    read_only   = false
+    permissions = "755"
+  }
+}
+
+# --------------------------------------------------------------------------- #
+# Jobs
+# --------------------------------------------------------------------------- #
+
+# Plain job files (path relative to environments/local/):
+jobs = {
+  nginx = "../../../jobs/nginx.nomad"
+}
+
+# Templated jobs:
+templated_jobs = {
+  webapp = {
+    template_path = "../../../jobs/webapp.nomad.hcl.tftpl"
+    vars = {
+      namespace      = "default"
+      datacenter     = "dc1"
+      image          = "nginx:latest"
+      replicas       = "3"
+      service_name   = "webapp"
+      enable_scaling = "true"
+      min_count      = "1"
+      max_count      = "6"
+      target_cpu_pct = "70"
+    }
+  }
+  fabio = {
+    template_path = "../../../jobs/fabio.nomad.hcl.tftpl"
+    vars = {
+      namespace  = "default"
+      datacenter = "dc1"
+    }
+  }
+}
+
+# --------------------------------------------------------------------------- #
+# Secrets (Nomad Variables)
+# --------------------------------------------------------------------------- #
+
+nomad_secrets = {
+  db_credentials = {
+    path      = "secrets/database"
+    namespace = "development"
+    items = {
+      username = "app_user"
+      password = "change-me-in-production"
+      host     = "db.service.consul"
+      port     = "5432"
+      database = "myapp"
+    }
+  }
+  api_keys = {
+    path      = "secrets/api"
+    namespace = "development"
+    items = {
+      stripe_key   = "sk_test_replace_me"
+      sendgrid_key = "SG.replace_me"
+    }
+  }
+}
+
+# --------------------------------------------------------------------------- #
+# Custom ACL Policies
+# --------------------------------------------------------------------------- #
+
+# custom_acl_policies = {
+#   ci_deploy = {
+#     description = "CI/CD pipeline deployment access"
+#     rules_hcl   = <<-EOT
+#       namespace "production" {
+#         policy       = "write"
+#         capabilities = ["submit-job", "read-job", "list-jobs"]
+#       }
+#       node  { policy = "read" }
+#       agent { policy = "read" }
+#     EOT
+#   }
+# }
+
+# --------------------------------------------------------------------------- #
+# Autoscaler
+# --------------------------------------------------------------------------- #
+
+autoscaler_namespace         = "default"
+autoscaler_version           = ""    # empty = resolve latest from GitHub
+autoscaler_use_local_binary  = false
+autoscaler_local_binary_path = "~/projects/hashicorp/nomad-autoscaler/bin/nomad-autoscaler"
+autoscaler_job_template_path = "../../../jobs/autoscaler.nomad.hcl.tftpl"
+
+# --------------------------------------------------------------------------- #
+# OIDC / Dex
+# --------------------------------------------------------------------------- #
+
+# Dex provider configuration
+oidc_identity_client_index = 0
+oidc_dex_runtime           = "host"   # "host" = Docker on macOS, "vm" = Docker inside Multipass VM
+oidc_host_access_ip        = ""       # auto-detected from VM subnet if empty
+oidc_dex_image             = "ghcr.io/dexidp/dex:v2.41.1"
+oidc_dex_container_name    = "nomad-local-dex"
+oidc_dex_http_port         = 5556
+oidc_dex_client_id         = "nomad-local"
+
+# Dex admin user credentials
+oidc_admin_email         = "nomad-admin@example.com"
+oidc_admin_username      = "nomad-admin"
+# Generate new hash: htpasswd -nbBC 10 "" "your-password" | cut -d: -f2
+oidc_admin_password_hash = "$2y$10$uaHf2Q.dj9C/5y4Olmk/DOEqeuRUibBMk0u50nsKrZ1Ga.3D0HNfS"  # "nomad-admin-password"
+
+# Additional redirect URIs (e.g., for remote access)
+oidc_additional_redirect_uris = []
+
+# Nomad ACL auth method configuration
+oidc_create_auth_method        = true     # Create nomad_acl_auth_method resource
+oidc_auth_method_name          = "local-dex"
+oidc_auth_method_max_token_ttl = "8h"
+oidc_make_default_auth_method  = true     # Makes this the default for `nomad login`
+
+# Additional OIDC binding rules (beyond the default admin rule)
+oidc_binding_rules = {
+  # developers = {
+  #   description = "Map developers group to developer policy"
+  #   selector    = "\"engineering\" in list.groups"
+  #   bind_type   = "policy"
+  #   bind_name   = "developer"
+  # }
+  # ops_team = {
+  #   description = "Map ops group to ops policy"
+  #   selector    = "\"ops\" in list.groups"
+  #   bind_type   = "policy"
+  #   bind_name   = "ops"
+  # }
+}
