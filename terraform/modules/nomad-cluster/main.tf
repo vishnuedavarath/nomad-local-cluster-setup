@@ -407,12 +407,8 @@ resource "null_resource" "bootstrap_acl" {
       VM_FILE="/tmp/nomad_acl_bootstrap.json"
       HOST_FILE="${path.module}/.nomad_acl_bootstrap.json"
 
-      # Skip if already bootstrapped successfully
-      if [ -f "$HOST_FILE" ] && grep -q "SecretID" "$HOST_FILE" 2>/dev/null; then
-        echo "ACL already bootstrapped, skipping."
-        exit 0
-      fi
-
+      # Always attempt bootstrap when this resource is (re)created.
+      # If the cluster was destroyed and recreated, any cached file is stale.
       printf '{}\n' > "$HOST_FILE"
 
       # Retry bootstrap (cluster may still be electing a leader)

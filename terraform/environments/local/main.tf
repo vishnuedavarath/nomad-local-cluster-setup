@@ -54,13 +54,20 @@ module "cluster" {
 # --------------------------------------------------------------------------- #
 # Nomad Provider (available after Phase 1)                                     #
 # --------------------------------------------------------------------------- #
-# NOTE: On first apply after bootstrap, you need `terraform apply -refresh-only`
-# or a second `terraform apply` to pick up the bootstrap token from the file
-# written by the provisioner. This is inherent to Terraform's plan-time evaluation.
+# Read bootstrap token directly from file on disk (written by Phase 1).
+# This avoids stale state issues with data.local_file inside the module.
+
+locals {
+  acl_bootstrap_file = "${path.module}/../../modules/nomad-cluster/.nomad_acl_bootstrap.json"
+  acl_bootstrap_token = var.enable_nomad_setup && var.enable_acl ? (
+    fileexists(local.acl_bootstrap_file) ?
+    try(jsondecode(file(local.acl_bootstrap_file)).SecretID, null) : null
+  ) : null
+}
 
 provider "nomad" {
   address   = var.enable_nomad_setup ? module.cluster.nomad_address : "http://localhost:4646"
-  secret_id = var.enable_nomad_setup && var.enable_acl ? module.cluster.acl_bootstrap_token : null
+  secret_id = local.acl_bootstrap_token
 }
 
 # --------------------------------------------------------------------------- #
