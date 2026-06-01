@@ -21,8 +21,7 @@ terraform/
     ├── nomad-namespaces/         # Namespace management
     ├── nomad-secrets/            # Nomad Variables (secret storage)
     ├── nomad-volumes/            # Host volume setup on clients
-    ├── nomad-jobs/               # Job deployment (plain & templated)
-    ├── nomad-autoscaler/         # Autoscaler deployment
+    ├── nomad-plugins/            # Plugin infrastructure (mount dirs, device/driver binaries)
     └── nomad-oidc/               # Dex OIDC provider + auth method
 ```
 
@@ -54,6 +53,27 @@ terraform apply -target=module.instances -target=module.cluster
 terraform apply
 ```
 
+## Deploy Jobs
+
+Jobs are deployed using the Nomad CLI via deploy scripts (not Terraform). This keeps job lifecycle decoupled from infrastructure.
+
+```bash
+# Deploy all jobs in nomad-jobs/
+./scripts/deploy-jobs.sh
+
+# Deploy specific jobs
+./scripts/deploy-jobs.sh nginx.nomad foo.nomad.hcl
+
+# Deploy CSI plugins (after Terraform has prepared mount dirs)
+./scripts/deploy-csi-plugins.sh
+
+# Check status
+nomad job status
+nomad plugin status
+```
+
+Job specs live in `nomad-jobs/` at the repo root. CSI plugin jobs live in `nomad-jobs/csi/`. Templates (`.tftpl` files) are skipped by the deploy script — render them manually with `nomad job run -var` or convert them to plain HCL with defaults.
+
 ## Configuration
 
 Edit `environments/local/terraform.tfvars` to customize. See `terraform.tfvars.example` for a fully documented template.
@@ -66,9 +86,7 @@ Edit `environments/local/terraform.tfvars` to customize. See `terraform.tfvars.e
 | Namespaces | Map of namespaces with descriptions and metadata |
 | Host Volumes | Map of host volumes with paths and permissions |
 | Secrets | Nomad Variables to store in specific namespaces |
-| Jobs | Plain and templated job files to deploy |
 | Custom ACL Policies | Additional ACL policies beyond built-in defaults |
-| Autoscaler | Version, local binary mode, namespace |
 | OIDC | Dex runtime, admin credentials, auth method, binding rules |
 
 ## Module Dependency Graph
@@ -82,10 +100,12 @@ multipass-instances
        ├──► nomad-acl
        ├──► nomad-namespaces ──► nomad-secrets
        ├──► nomad-volumes
-       ├──► nomad-jobs (depends on namespaces + volumes)
-       ├──► nomad-autoscaler (depends on acl + namespaces)
+       ├──► nomad-plugins (depends on cluster)
        └──► nomad-oidc (depends on acl + cluster)
 ```
+
+**Jobs** are deployed separately via CLI using `./scripts/deploy-jobs.sh` (not Terraform).
+See the `nomad-jobs/` directory for job definitions.
 
 ## Token Hierarchy
 

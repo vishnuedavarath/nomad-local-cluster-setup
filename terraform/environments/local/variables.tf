@@ -131,6 +131,12 @@ variable "enable_docker_volumes" {
   default     = true
 }
 
+variable "enable_docker_privileged" {
+  description = "Allow Docker privileged mode on clients (required for CSI plugins)."
+  type        = bool
+  default     = false
+}
+
 variable "install_docker" {
   description = "Install Docker on client VMs."
   type        = bool
@@ -171,20 +177,16 @@ variable "enable_host_volumes" {
   default     = true
 }
 
-variable "enable_jobs" {
-  description = "Enable job deployments."
-  type        = bool
-  default     = true
-}
 
-variable "enable_autoscaler" {
-  description = "Enable autoscaler deployment."
+
+variable "enable_oidc" {
+  description = "Enable OIDC (Dex) provider."
   type        = bool
   default     = false
 }
 
-variable "enable_oidc" {
-  description = "Enable OIDC (Dex) provider."
+variable "enable_plugins" {
+  description = "Enable plugin deployments (CSI, device, driver)."
   type        = bool
   default     = false
 }
@@ -270,58 +272,7 @@ variable "nomad_secrets" {
   default   = {}
 }
 
-# --------------------------------------------------------------------------- #
-# Jobs                                                                         #
-# --------------------------------------------------------------------------- #
 
-variable "jobs" {
-  description = "Plain jobspec files to deploy. Key = name, value = file path."
-  type        = map(string)
-  default     = {}
-}
-
-variable "templated_jobs" {
-  description = "Templated jobspec files to deploy."
-  type = map(object({
-    template_path = string
-    vars          = map(string)
-  }))
-  default = {}
-}
-
-# --------------------------------------------------------------------------- #
-# Autoscaler                                                                   #
-# --------------------------------------------------------------------------- #
-
-variable "autoscaler_namespace" {
-  description = "Namespace for the autoscaler job."
-  type        = string
-  default     = "default"
-}
-
-variable "autoscaler_version" {
-  description = "Autoscaler version (empty = latest)."
-  type        = string
-  default     = ""
-}
-
-variable "autoscaler_use_local_binary" {
-  description = "Use a locally built autoscaler binary."
-  type        = bool
-  default     = false
-}
-
-variable "autoscaler_local_binary_path" {
-  description = "Path to local autoscaler binary."
-  type        = string
-  default     = "~/projects/hashicorp/nomad-autoscaler/bin/nomad-autoscaler"
-}
-
-variable "autoscaler_job_template_path" {
-  description = "Path to the autoscaler job template."
-  type        = string
-  default     = "../../../jobs/autoscaler.nomad.hcl.tftpl"
-}
 
 # --------------------------------------------------------------------------- #
 # OIDC (Dex)                                                                   #
@@ -424,6 +375,53 @@ variable "oidc_binding_rules" {
     selector    = string
     bind_type   = string
     bind_name   = string
+  }))
+  default = {}
+}
+
+# --------------------------------------------------------------------------- #
+# Plugins                                                                      #
+# --------------------------------------------------------------------------- #
+
+variable "csi_plugins" {
+  description = "CSI plugins to deploy as Nomad jobs. Key is the plugin ID."
+  type = map(object({
+    docker_image    = string
+    namespace       = optional(string, "default")
+    datacenter      = optional(string, "dc1")
+    type            = optional(string, "monolith")
+    controller_args = optional(list(string), [])
+    node_args       = optional(list(string), [])
+    args            = optional(list(string), [])
+    env             = optional(map(string), {})
+    privileged      = optional(bool, true)
+    mount_dirs      = optional(list(string), [])
+    resources = optional(object({
+      cpu    = optional(number, 100)
+      memory = optional(number, 128)
+    }), {})
+  }))
+  default = {}
+}
+
+variable "device_plugins" {
+  description = "Device plugins to install on client VMs. Key is the plugin name."
+  type = map(object({
+    download_url = string
+    binary_name  = optional(string, "")
+    plugin_dir   = optional(string, "/opt/nomad/plugins")
+    config_hcl   = optional(string, "")
+  }))
+  default = {}
+}
+
+variable "driver_plugins" {
+  description = "Task driver plugins to install on client VMs. Key is the plugin name."
+  type = map(object({
+    download_url = string
+    binary_name  = optional(string, "")
+    plugin_dir   = optional(string, "/opt/nomad/plugins")
+    config_hcl   = optional(string, "")
   }))
   default = {}
 }

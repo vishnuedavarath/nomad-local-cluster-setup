@@ -320,10 +320,14 @@ resource "null_resource" "configure_nomad_clients" {
   ]
 
   triggers = {
-    datacenter    = var.datacenter
-    client_name   = var.client_names[count.index]
-    nomad_edition = var.nomad_edition
-    nomad_version = local.nomad_release_version
+    datacenter            = var.datacenter
+    client_name           = var.client_names[count.index]
+    nomad_edition         = var.nomad_edition
+    nomad_version         = local.nomad_release_version
+    enable_docker_volumes = var.enable_docker_volumes
+    enable_docker_priv    = var.enable_docker_privileged
+    enable_raw_exec       = var.enable_raw_exec
+    enable_acl            = var.enable_acl
   }
 
   provisioner "local-exec" {
@@ -356,6 +360,7 @@ plugin "docker" {
     volumes {
       enabled = ${var.enable_docker_volumes}
     }
+    allow_privileged = ${var.enable_docker_privileged}
   }
 }
 

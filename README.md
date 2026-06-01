@@ -50,15 +50,14 @@ nomad-local-cluster/
 │   └── setup-local-nomad.yml
 ├── terraform/                  # Terraform-based provisioning
 │   ├── README.md
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   ├── operations/             # Cluster operations: ACLs, namespaces, secrets, volumes
-│   └── development/            # Development workloads deployed via Terraform
-├── jobs/                       # Nomad job definitions
+│   ├── environments/local/     # Root config (terraform.tfvars, main.tf, etc.)
+│   └── modules/                # Reusable modules (instances, cluster, acl, ...)
+├── nomad-jobs/                 # Nomad job definitions (deployed via CLI)
 │   ├── nginx.nomad
 │   ├── foo.nomad.hcl
 │   └── bar.nomad.hcl
+├── scripts/                    # Deployment and operational scripts
+│   └── deploy-jobs.sh          # Deploy jobs using nomad CLI
 └── README.md
 ```
 

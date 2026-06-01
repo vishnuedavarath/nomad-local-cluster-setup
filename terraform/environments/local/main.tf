@@ -46,6 +46,7 @@ module "cluster" {
   enable_acl                    = var.enable_acl
   enable_raw_exec               = var.enable_raw_exec
   enable_docker_volumes         = var.enable_docker_volumes
+  enable_docker_privileged      = var.enable_docker_privileged
   install_docker                = var.install_docker
   vm_ready_delay                = var.vm_ready_delay
   cluster_stabilize_delay       = var.cluster_stabilize_delay
@@ -115,34 +116,22 @@ module "secrets" {
   depends_on = [module.namespaces]
 }
 
+# --- Plugins ---
+module "plugins" {
+  count  = var.enable_nomad_setup && var.enable_plugins ? 1 : 0
+  source = "../../modules/nomad-plugins"
+
+  client_names   = module.instances.client_names
+  csi_plugins    = var.csi_plugins
+  device_plugins = var.device_plugins
+  driver_plugins = var.driver_plugins
+
+  depends_on = [module.cluster]
+}
+
 # --- Jobs ---
-module "jobs" {
-  count  = var.enable_nomad_setup && var.enable_jobs ? 1 : 0
-  source = "../../modules/nomad-jobs"
-
-  jobs           = var.jobs
-  templated_jobs = var.templated_jobs
-
-  depends_on = [module.namespaces, module.volumes]
-}
-
-# --- Autoscaler ---
-module "autoscaler" {
-  count  = var.enable_nomad_setup && var.enable_autoscaler ? 1 : 0
-  source = "../../modules/nomad-autoscaler"
-
-  nomad_address      = module.cluster.nomad_address
-  nomad_token        = var.enable_acl && length(module.acl) > 0 ? module.acl[0].ops_token : ""
-  client_names       = module.instances.client_names
-  namespace          = var.autoscaler_namespace
-  datacenter         = var.datacenter
-  autoscaler_version = var.autoscaler_version
-  use_local_binary   = var.autoscaler_use_local_binary
-  local_binary_path  = var.autoscaler_local_binary_path
-  job_template_path  = var.autoscaler_job_template_path
-
-  depends_on = [module.acl, module.namespaces]
-}
+# Jobs are deployed via CLI using scripts/deploy-jobs.sh (not Terraform).
+# See the nomad-jobs/ directory for job definitions.
 
 # --- OIDC (Dex) ---
 module "oidc" {

@@ -60,8 +60,6 @@ cluster_stabilize_delay = "15s"
 enable_nomad_setup = false
 
 enable_host_volumes = true
-enable_jobs         = true
-enable_autoscaler   = false
 enable_oidc         = false
 
 # --------------------------------------------------------------------------- #
@@ -106,38 +104,10 @@ host_volumes = {
 }
 
 # --------------------------------------------------------------------------- #
-# Jobs
+# Jobs — deployed via CLI (not Terraform)
 # --------------------------------------------------------------------------- #
-
-# Plain job files (path relative to environments/local/):
-jobs = {
-  nginx = "../../../jobs/nginx.nomad"
-}
-
-# Templated jobs:
-templated_jobs = {
-  webapp = {
-    template_path = "../../../jobs/webapp.nomad.hcl.tftpl"
-    vars = {
-      namespace      = "default"
-      datacenter     = "dc1"
-      image          = "nginx:latest"
-      replicas       = "3"
-      service_name   = "webapp"
-      enable_scaling = "true"
-      min_count      = "1"
-      max_count      = "6"
-      target_cpu_pct = "70"
-    }
-  }
-  fabio = {
-    template_path = "../../../jobs/fabio.nomad.hcl.tftpl"
-    vars = {
-      namespace  = "default"
-      datacenter = "dc1"
-    }
-  }
-}
+# Job specs live in nomad-jobs/ at the repo root.
+# Deploy with: ./scripts/deploy-jobs.sh
 
 # --------------------------------------------------------------------------- #
 # Secrets (Nomad Variables)
@@ -182,16 +152,6 @@ nomad_secrets = {
 #     EOT
 #   }
 # }
-
-# --------------------------------------------------------------------------- #
-# Autoscaler
-# --------------------------------------------------------------------------- #
-
-autoscaler_namespace         = "default"
-autoscaler_version           = ""    # empty = resolve latest from GitHub
-autoscaler_use_local_binary  = false
-autoscaler_local_binary_path = "~/projects/hashicorp/nomad-autoscaler/bin/nomad-autoscaler"
-autoscaler_job_template_path = "../../../jobs/autoscaler.nomad.hcl.tftpl"
 
 # --------------------------------------------------------------------------- #
 # OIDC / Dex

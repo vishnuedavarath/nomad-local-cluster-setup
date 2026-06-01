@@ -73,6 +73,12 @@ variable "enable_docker_volumes" {
   default     = true
 }
 
+variable "enable_docker_privileged" {
+  description = "Allow Docker privileged mode on clients (required for CSI plugins)."
+  type        = bool
+  default     = false
+}
+
 variable "install_docker" {
   description = "Install Docker on client VMs."
   type        = bool
